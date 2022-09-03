@@ -4,14 +4,14 @@ import json
 from time import sleep
 def etcdget(key, prefix=''):
  os.environ['ETCDCTL_API']= '3'
- endpoints=''
- data=json.load(open('/pacedata/runningetcdnodes.txt'));
- for x in data['members']:
-  endpoints=endpoints+str(x['clientURLs'])[2:][:-2]+','
- endpoints = endpoints[:-1]
- cmdline=['/bin/etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,prefix]
  err = 2
  while err == 2:
+  endpoints=''
+  data=json.load(open('/pacedata/runningetcdnodes.txt'));
+  for x in data['members']:
+   endpoints=endpoints+str(x['clientURLs'])[2:][:-2]+','
+  endpoints = endpoints[:-1]
+  cmdline=['/bin/etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,prefix]
   result=subprocess.run(cmdline,stdout=subprocess.PIPE)
   err = result.returncode
   if err == 2:

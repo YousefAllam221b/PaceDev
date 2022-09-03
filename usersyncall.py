@@ -1,6 +1,6 @@
 #!/bin/python3.6
 import subprocess,sys
-from etcdget import etcdget as get
+from etcdgetpy import etcdget as get
 from etcdgetlocal import etcdget as getlocal
 from etcdput import etcdput as put
 from broadcasttolocal import broadcasttolocal
@@ -8,6 +8,7 @@ from ast import literal_eval as mtuple
 from socket import gethostname as hostname
 
 myhost = hostname()
+myip = get('ActivePartners/'+myhost)[0]
 allusers = []
 def thread_add(user):
  username=user[0].replace('usersinfo/','')
@@ -30,6 +31,8 @@ def thread_add(user):
   userhash=get('usershash/'+username)[0]
   userhome=userinfo[2]
   cmdline=['/TopStor/UnixAddUser_sync',username,userhash,userid,usergd,userhome]
+  with open('/root/tmpusersync','w') as f:
+   f.write('user: '+str(userhash))
   result=subprocess.run(cmdline,stdout=subprocess.PIPE)
 
 def thread_del(*user):
@@ -77,8 +80,21 @@ def usersyncall(hostip,tosync='usersinfo'):
    gethosts = get('modified/user/'+user)[0]
    if myhost not in gethosts:
     put('modified/user/'+user,gethosts+'/'+myhost)
-    broadcasttolocal('modified/user/'+user,gethosts+'/'+myhost)
+  #  broadcasttolocal('modified/user/'+user,gethosts+'/'+myhost)
+
+def oneusersync(oper,usertosync):
+ global allusers
+ global myusers
+ print('args',oper,usertosync)
+ user=get('usersinfo', usertosync)[0]
+ if user == -1:
+  return
+ if oper == 'Add':
+  thread_add(user)
+ else:
+  thread_del(user)
  
   
 if __name__=='__main__':
- usersyncall(*sys.argv[1:])
+# usersyncall(*sys.argv[1:])
+ oneusersync(*sys.argv[1:])

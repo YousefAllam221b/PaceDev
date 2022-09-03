@@ -15,7 +15,10 @@ def delall(*args):
   dels('lists/'+args[0])
 
 def getall(*args):
- if len(args) > 1:
+ if len(args) == 0:
+  alls=get('lists','--prefix')
+  return alls
+ elif len(args) > 1:
   alls=get(args[1]+'/lists/'+args[0])
  else:
   alls=get('lists/'+args[0])
@@ -27,7 +30,7 @@ def getall(*args):
 
 def putall(*args):
  alls=getall(args[0])
- put(args[1]+'/lists/'+args[0],str(alls))
+ put(args[1]+'/lists/'+args[0],json.dumps(alls))
 
 def norm(val):
  units={'B':1/1024**2,'K':1/1024, 'M': 1, 'G':1024 , 'T': 1024**2 }

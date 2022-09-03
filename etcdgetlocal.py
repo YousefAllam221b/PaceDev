@@ -9,12 +9,7 @@ def etcdget(thehost,key, prefix=''):
  endpoints=''
  endpoints='http://'+thehost+':2378'
  cmdline=['etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,prefix]
- err = 2
- while err == 2:
-  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
-  err = result.returncode
-  if err == 2:
-    sleep(2)
+ result=subprocess.run(cmdline,stdout=subprocess.PIPE)
  z=[]
  try:
   if(prefix =='--prefix'):
@@ -28,12 +23,7 @@ def etcdget(thehost,key, prefix=''):
    print(str(result.stdout).split(key)[1][2:][:-3])
   else:
    cmdline=['/bin/etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,'--prefix']
-   err = 2
-   while err == 2:
-    result=subprocess.run(cmdline,stdout=subprocess.PIPE)
-    err = result.returncode
-    if err == 2:
-     sleep(2)
+   result=subprocess.run(cmdline,stdout=subprocess.PIPE)
    mylist=str(result.stdout)[2:][:-3].split('\\n')
    zipped=zip(mylist[0::2],mylist[1::2])
    for x in zipped:

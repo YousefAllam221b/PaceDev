@@ -9,11 +9,12 @@ def etcdcmd(thehost,cmd,*args):
  cmdline='/bin/etcdctl --endpoints='+endpoints+' '+cmd+' '+' '.join(args)
  err = 2
  while err == 2:
-  result = subprocess.run(cmdline.split(),stdout=subprocess.PIPE).stdout.decode('utf-8')
+  result = subprocess.run(cmdline.split(),stdout=subprocess.PIPE)
+  res = result.stdout.decode('utf-8')
   err = result.returncode
   if err == 2:
    sleep(2)
- print(result)
+ print(res)
 
 
 if __name__=='__main__':

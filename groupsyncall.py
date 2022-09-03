@@ -86,6 +86,15 @@ def groupsyncall(hostip,tosync='usrsigroup'):
 # for tt in threads:
 #  tt.join()
    
+def onegroupsync(oper,usertosync):
+ global allusers
+ global myusers
+ user=get('usersinfo', usertosync)[0]
+ if oper == 'add':
+  thread_add(user)
+ else:
+  thread_del(user)
+ 
   
 if __name__=='__main__':
  with open('/root/sync2','w') as f:

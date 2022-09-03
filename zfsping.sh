@@ -30,14 +30,37 @@ cd /pace
 rm -rf /pacedata/addiscsitargets 2>/dev/null
 rm -rf /pacedata/startzfsping 2>/dev/null
 /pace/startzfs.sh
-leadername=` ./etcdget.py leader --prefix | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
-leaderip=` ./etcdget.py leader/$leadername `
+zfspingpy(){
+./zfsping.py >/root/zfspingpy 2>/root/zfspingpyerr
+}
+while true;
+do
+ ./zfsping.py >/root/zfspingpy 2>/root/zfspingpyerr
+# zfspingpy
+ sleep 1
+done
+
+
+
+
+
+
+
+leaderall=` ./etcdget.py leader --prefix `
+leader=`echo $leaderall | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
+leadername=$leader
+leaderip=`echo $leaderall | awk -F"')" '{print $1}' | awk -F", '" '{print $2}'`
 date=`date `
 myhost=`hostname -s`
 myip=`/sbin/pcs resource show CC | grep Attributes | awk -F'ip=' '{print $2}' | awk '{print $1}'`
+#./hostlostlocal.py $leadername $myhost $myip &
 echo starting in $date >> /root/zfspingtmp
 while true;
 do
+ leaderall=` ./etcdget.py leader --prefix `
+ leader=`echo $leaderall | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
+ leadername=$leader
+ leaderip=`echo $leaderall | awk -F"')" '{print $1}' | awk -F", '" '{print $2}'`
  pgrep fixpool 
  if [ $? -ne 0 ];
  then
@@ -74,10 +97,23 @@ do
   if [ $isprimary -eq 3 ];
   then
    echo for $isprimary sending info Partsu03 booted with ip >> /root/zfspingtmp
+   aliast='alias'
+   myalias=`/pace/etcdget.py $aliast/$myhost`
+   aliast='alias'
    /pace/etcdput.py ready/$myhost $myip
+   /pace/etcdput.py $aliast/$myhost $myalias
    /pace/etcdput.py ActivePartners/$myhost $myip
+   stamp=`date +%s`
+   myalias=`echo $myalias | sed 's/\_/\:\:\:/g'`
+   myalias=`echo $myalias | sed 's/\//\:\:\:/g'`
+   /pace/etcdput.py sync/ActivePartners/Add_${myhost}_$myip/request ActivePartners_$stamp
+   /pace/etcdput.py sync/ActivePartners/Add_${myhost}_$myip/request/$leadername ActivePartners_$stamp
+   /pace/etcdput.py sync/$aliast/Add_${myhost}_$myalias/request/$leadername alias_$stamp
+   /pace/etcdput.py sync/$aliast/Add_${myhost}_$myalias/request alias_$stamp
+   /pace/etcdput.py sync/ready/Add_${myhost}_$myip/request ready_$stamp
+   /pace/etcdput.py sync/ready/Add_${myhost}_$myip/request/$leadername ready_$stamp
    partnersync=0
-   /TopStor/broadcast.py SyncHosts /TopStor/pump.sh addhost.py 
+   #/TopStor/broadcast.py SyncHosts /TopStor/pump.sh addhost.py 
    touch /pacedata/addiscsitargets 
    pgrep putzpool 
    if [ $? -ne 0 ];
@@ -104,8 +140,11 @@ do
  fi
    echo no leader although I am primary node >> /root/zfspingtmp
    ./runningetcdnodes.py $myip 2>/dev/null
-   ./etcddel.py leader --prefix 2>/dev/null &
-   ./etcdput.py leader/$myhost $myip 2>/dev/null &
+   ./etcddel.py leader --prefix 2>/dev/null 
+   ./etcdput.py leader/$myhost $myip 2>/dev/null 
+   stamp=`date +%s`
+    /pace/etcdput.py sync/leader/Add_${myhost}_$myip/request leader_$stamp
+    /pace/etcdput.py sync/ready/Add_${myhost}_$myip/request/$myhost leader_$stamp
  echo $perfmon | grep 1
  if [ $? -eq 0 ]; then
    /TopStor/logqueue.py FixIamleader stop system 
@@ -126,31 +165,6 @@ do
  fi 
    fi
  echo checking if there are partners to sync >> /root/zfspingtmp
- tosync=`ETCDCTL_API=3 /pace/etcdget.py tosync --prefix | wc -l `
- if [ $tosync -gt 0 ];
- then
-  ETCDCTL_API=3 /pace/etcddel.py tosync --prefix
-  echo syncthing with the ready to sync partners >> /root/zfspingtmp
-  ./syncthis.py ready --prefix 
-  ./syncthis.py pools/ --prefix 
-  ./syncthis.py volumes/ --prefix 
-  ./syncthis.py ActivePartners --prefix 
-  ./syncthis.py allowedPartners --prefix 
-  ./syncthis.py frstnode --prefix 
-  ./syncthis.py namespace --prefix 
- else
-  readycount=`ETCDCTL_API=3 /pace/etcdget.py ready --prefix | wc -l` 
-  lostcount=`ETCDCTL_API=3 /pace/etcdget.py lost --prefix | wc -l` 
-  totalin=$((readycount+lostcount))
-  ActivePartners=`ETCDCTL_API=3 /pace/etcdget.py ActivePartners --prefix | wc -l` 
-  if [ $totalin -eq $ActivePartners ];
-  then  
-   echo All running partners are ready and in sync >> /root/zfspingtmp
-  else
-   echo some partners are not in sync >> /root/zfspingtmp
-   ./etcdput.py tosync yes
-  fi
- fi
  else
   echo I am not a primary etcd.. heartbeating leader >> /root/zfspingtmp
   leaderall=` ./etcdget.py leader --prefix 2>&1`
@@ -158,135 +172,6 @@ do
   if [ $? -eq 0 ];
   then
    echo leader is dead..  >> /root/zfspingtmp
-   leaderfail=1
-   ./etcdgetlocal.py $myip known --prefix | wc -l | grep 1
-   if [ $? -eq 0 ];
-   then
-    /TopStor/logmsg.py Partst05 info system $myhost &
-    primtostd=0;
-   fi
-   nextleadip=`ETCDCTL_API=3 ./etcdgetlocal.py $myip nextlead` 
-   echo nextlead is $nextleadip  >> /root/zfspingtmp
-   echo $nextleadip | grep $myip
-   if [ $? -eq 0 ];
-   then
- echo $perfmon | grep 1
- if [ $? -eq 0 ]; then
-    /TopStor/logqueue.py AddingMePrimary start system 
- fi
-    echo hostlostlocal getting all my pools from $leadername >> /root/zfspingtmp
-    ETCDCTL_API=3 /pace/hostlostlocal.sh $leadername $myip $leaderip
-    systemctl stop etcd 2>/dev/null
-    clusterip=`cat /pacedata/clusterip`
-    echo starting primary etcd with namespace >> /root/zfspingtmp
-    ./etccluster.py 'new' $myip 2>/dev/null
-    chmod +r /etc/etcd/etcd.conf.yml
-    systemctl daemon-reload 2>/dev/null
-    systemctl start etcd 2>/dev/null
-    ionice -c2 -n0 -p `pgrep etcd`
-    while true;
-    do
-     echo starting etcd=$?
-     systemctl status etcd
-     if [ $? -eq 0 ];
-     then
-      break
-     else
-      sleep 1
-     fi
-    done
-   #./etcdput.py clusterip $clusterip 2>/dev/null
-   #pcs resource create clusterip ocf:heartbeat:IPaddr nic="$enpdev" ip=$clusterip cidr_netmask=24 2>/dev/null
-    echo adding me as a leader >> /root/zfspingtmp
-    rm -rf /etc/chrony.conf
-    cp /TopStor/chrony.conf /etc/
-    sed -i '/MASTERSERVER/,+1 d' /etc/chrony.conf
-    ./runningetcdnodes.py $myip 2>/dev/null
-    ./etcddel.py leader 2>/dev/null &
-    ./etcdput.py leader/$myhost $myip 2>/dev/null &
-    ./etcddel.py ready --prefix 2>/dev/null &
-    ./etcdput.py ready/$myhost $myip 2>/dev/null &
-    ./etcdput.py tosync/$myhost $myip 2>/dev/null &
-#    ETCDCTL_API=3 /pace/hostlost.sh $leadername &
-    /TopStor/logmsg.py Partst02 warning system $leaderall &
-    
-    echo creating namespaces >>/root/zfspingtmp
-    ./setnamespace.py $enpdev &
-    ./setdataip.py &
-    echo created namespaces >>/root/zfspingtmp
-   # systemctl restart smb 2>/dev/null &
-    echo importing all pools >> /root/zfspingtmp
-    ./etcddel.py toimport/$myhost &
-    toimport=1
-    #/sbin/zpool import -am &>/dev/null
-    echo running putzpool and nfs >> /root/zfspingtmp
-    pgrep putzpool 
-    if [ $? -ne 0 ];
-    then
-     /pace/putzpool.py 2 $isprimary $primtostd  &
-     /TopStor/HostgetIPs
-    fi
-    pgrep activeusers 
-    if [ $? -ne 0 ];
-    then
-     /pace/activeusers.py   &
-    fi
-
-#    systemctl status nfs 
-#    if [ $? -ne 0 ];
-#    then
-#     systemctl start nfs 2>/dev/null
-#    fi
-    chgrp apache /var/www/html/des20/Data/* 2>/dev/null
-    chmod g+r /var/www/html/des20/Data/* 2>/dev/null
-    runningcluster=1
-    leadername=$myhost
- echo $perfmon | grep 1
- if [ $? -eq 0 ]; then
-    /TopStor/logqueue.py AddinMePrimary stop system 
- fi
-   else
-    ETCDCTL_API=3 /pace/hostlostlocal.sh $leadername $myip $leaderip
-    systemctl stop etcd 2>/dev/null 
-    echo starting waiting for new leader run >> /root/zfspingtmp
-    waiting=1
-    result='nothing'
-    while [ $waiting -eq 1 ]
-    do
-     echo still looping for new leader run >> /root/zfspingtmp
-     echo $result | grep nothing 
-     if [ $? -eq 0 ];
-     then
-      sleep 1 
-      result=`ETCDCTL_API=3 ./nodesearch.py $myip 2>/dev/null`
-     else
- echo $perfmon | grep 1
- if [ $? -eq 0 ]; then
-      /TopStor/logqueue.py AddingtoOtherleader start system 
- fi
-      echo found the new leader run $result >> /root/zfspingtmp
-      waiting=0
-      /pace/syncthtistoleader.py $myip pools/ $myhost
-      /pace/syncthtistoleader.py $myip volumes/ $myhost
-      /pace/etcdput.py ready/$myhost $myip
-      /pace/etcdput.py tosync/$myhost $myip
-      /TopStor/broadcast.py SyncHosts /TopStor/pump.sh addhost.py 
-      leaderall=` ./etcdget.py leader --prefix `
-      leader=`echo $leaderall | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
-      leaderip=` ./etcdget.py leader/$leader `
-      rm -rf /etc/chrony.conf
-      cp /TopStor/chrony.conf /etc/
-      sed -i "s/MASTERSERVER/$leaderip/g" /etc/chrony.conf
-      systemctl restart chronyd
- echo $perfmon | grep 1
- if [ $? -eq 0 ]; then
-      /TopStor/logqueue.py AddingtoOtherleader start system 
- fi
-     fi
-    done 
-    leadername=`./etcdget.py leader --prefix | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
-    continue
-   fi
   else 
    echo I am not primary.. checking if I am local etcd>> /root/zfspingtmp
    netstat -ant | grep 2378 | grep $myip | grep LISTEN &>/dev/null
@@ -299,9 +184,8 @@ do
     needlocal=2
    fi
    echo checking if I am known host >> /root/zfspingtmp
-   known=` ./etcdget.py known --prefix 2>/dev/null`
+   known=`./etcdget.py known --prefix`
    myconfig=` ./etcdgetlocal.py $myip configured/$myhost 2>/dev/null`
-
    echo $known | grep $myhost  &>/dev/null
    if [ $? -ne 0 ];
    then
@@ -325,14 +209,19 @@ do
      echo running sendhost.py $leaderip 'user' 'recvreq' $myhost >>/root/tmp2
      leaderall=` ./etcdget.py leader --prefix `
      leader=`echo $leaderall | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
+     issync=`./etcdget.py sync initial | grep $myhost`initial
+  echo $issync | grep $myhost
+  if [ $? -eq 0 ];
+  then
+  ./checksyncs.py syncrequest
+  else
+   /pace/etcddellocal.py $myip sync --prefix
+   /pace/checksyncs.py syncall $myip 
+   syncinit=$myhost
+  fi 
      leaderip=`echo $leaderall | awk -F"')" '{print $1}' | awk -F", '" '{print $2}'`
-     #/pace/sendhost.py $leaderip 'user' 'recvreq' $myhost &
-     /pace/etcdsync.py $myip pools pools 2>/dev/null
-     /pace/etcdsync.py $myip poolsnxt poolsnxt 2>/dev/null
-     /pace/etcdsync.py $myip nextlead nextlead 2>/dev/null
-     /pace/etcdsync.py $myip namespace namespace 
-     #/pace/sendhost.py $leaderip 'cifs' 'recvreq' $myhost &
-     /pace/sendhost.py $leaderip 'logall' 'recvreq' $myhost &
+     ./checksync.py syncrequest
+     /pace/sendhost.py $leaderip 'logall' 'recvreq' $myhost 
      isknown=$((isknown+1))
     fi
     if [[ $isknown -le 10 ]];
@@ -341,8 +230,24 @@ do
     fi
     if [[ $isknown -eq 3 ]];
     then
-     /pace/etcdput.py ready/$myhost $myip &
-     /pace/etcdput.py ActivePartners/$myhost $myip &
+     issync=`./etcdgetlocal.py $myip sync initial`initial
+     echo $issync | grep $myhost
+     if [ $? -eq 0 ]
+     then
+      echo syncrequests only 
+      ./checksyncs.py syncrequest
+     else
+      echo have to syncall 
+      ./checksyncs.py syncall $myip
+     fi 
+     stamp=`date +%s`
+     /pace/etcdput.py ready/$myhost $myip 
+     /pace/etcdput.py ActivePartners/$myhost $myip 
+     /pace/etcdput.py sync/ActivePartners/Add_${myhost}_$myip/request/$leadername ActivePartners_$stamp
+     /pace/etcdput.py sync/ActivePartners/Add_${myhost}_$myip/request ActivePartners_$stamp
+     /pace/etcdput.py sync/ready/Add_${myhost}_$myip/request/$leadername ready_$stamp
+     /pace/etcdput.py sync/ready/Add_${myhost}_$myip/request ready_$stamp
+
      /TopStor/broadcast.py SyncHosts /TopStor/pump.sh addhost.py
      #targetcli clearconfig True
      #targetcli saveconfig
@@ -402,14 +307,15 @@ do
   done
   leaderall=` ./etcdget.py leader --prefix `
   leader=`echo $leaderall | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
+  leadername=$leader
   leaderip=`echo $leaderall | awk -F"')" '{print $1}' | awk -F", '" '{print $2}'`
   ./etcdsync.py $myip primary primary 2>/dev/null &
   ./etcddellocal.py $myip known --prefix 2>/dev/null &
   ./etcddellocal.py $myip localrun --prefix 2>/dev/null &
   ./etcddellocal.py $myip run --prefix 2>/dev/null &
   ./etcdsync.py $myip known known 2>/dev/null &
-  ./etcdsync.py $myip localrun localrun 2>/dev/null &
-  ./etcdsync.py $myip leader known 2>/dev/null &
+  #./etcdsync.py $myip localrun localrun 2>/dev/null &
+  ./etcdsync.py $myip leader leader 2>/dev/null &
   echo /TopStor/syncq.py $leaderip $myhost >>/root/tmp2
   /TopStor/syncq.py $leaderip $myhost 2>/root/syncqerror
 #   ./etcddellocal.py $myip known/$myhost --prefix 2>/dev/null
@@ -437,7 +343,7 @@ do
   pgrep checksyncs 
   if [ $? -ne 0 ];
   then
-   /pace/checksyncs.py
+   /pace/checksyncs.py syncrequest
   fi
 
  fi
@@ -470,7 +376,8 @@ do
    pgrep  selectimport 
    if [ $? -ne 0 ];
    then
-    /TopStor/selectimport.py $myhost &
+    stamp=`date +%s`
+    /TopStor/selectimport.py $myhost $leader &
    fi
  fi 
  echo toimport = $toimport >> /root/zfspingtmp
@@ -519,7 +426,7 @@ do
    pgrep zpooltoimport
    if [ $? -ne 0 ];
    then
-    /TopStor/zpooltoimport.py all &
+    /TopStor/zpooltoimport.py all 2>/dev/null &  
     oldlsscsi=$lsscsi
    fi
    pgrep  VolumeCheck 
@@ -557,7 +464,7 @@ do
  pgrep checksyncs 
  if [ $? -ne 0 ];
  then
-  /pace/checksyncs.py
+  /pace/checksyncs.py syncrequest
  fi
 
   echo Collecting a change in system occured >> /root/zfspingtmp
