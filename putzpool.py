@@ -1,17 +1,17 @@
 #!/bin/python3.6
 import subprocess, socket
 from os import listdir
+from logqueue import queuethis
 from etcdput import etcdput as put
 from etcdget import etcdget as get 
 from etcddel import etcddel as dels 
 from os.path import getmtime
 
 
-cmdline='cat /pacedata/perfmon'
-perfmon=str(subprocess.run(cmdline.split(),stdout=subprocess.PIPE).stdout)
+with open('/pacedata/perfmon','r') as f:
+ perfmon = f.readline() 
 if '1' in perfmon:
- cmdline=['/TopStor/queuethis.sh','putzpool.py','start','system']
- result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ queuethis('putzpool.py','start','system')
 x=subprocess.check_output(['pgrep','-c','putzpool'])
 x=str(x).replace("b'","").replace("'","").split('\\n')
 if(x[0]!= '1' ):
@@ -52,10 +52,15 @@ poolsstatus=[]
 x=list(map(chr,(range(97,123))))
 drives=';sd'.join(x).split(';')
 drives[0]='sd'+drives[0]
-cmdline=['/sbin/zfs','list','-t','snapshot,filesystem','-o','name,creation,used,quota,usedbysnapshots,refcompressratio,prot:kind,available','-H']
+print('dirves',drives)
+cmdline=['fdisk','-l']
+cdisks=subprocess.run(cmdline,stdout=subprocess.PIPE)
+drives=[ x for x in drives if x in str(cdisks)]
+cmdline=['/sbin/zfs','list','-t','snapshot,filesystem,volume','-o','name,creation,used,quota,usedbysnapshots,refcompressratio,prot:kind,available,snap:type','-H']
 result=subprocess.run(cmdline,stdout=subprocess.PIPE)
 zfslistall=str(result.stdout)[2:][:-3].replace('\\t',' ').split('\\n')
 #lists=[lpools,ldisks,ldefdisks,lavaildisks,lfreedisks,lsparedisks,lraids,lvolumes,lsnapshots]
+zfslistall=str(result.stdout)[2:][:-3].replace('\\t',' ').split('\\n')
 lists={'pools':lpools,'disks':ldisks,'defdisks':ldefdisks,'inusedisks':linusedisks,'freedisks':lfreedisks,'sparedisks':lsparedisks,'raids':lraids,'volumes':lvolumes,'snapshots':lsnapshots, 'hosts':lhosts, 'phosts':phosts}
 for a in sty:
  print('aaaaaa',a)
@@ -66,6 +71,7 @@ for a in sty:
    for lss in lsscsi:
     if any('/dev/'+b[0] in lss for drive in drives):
      b[0]='scsi-'+lss.split()[6]
+     
  print('strb',str(b))
  if "pdhc" in str(b) and  'pool' not in str(b):
   raidlist=[]
@@ -105,7 +111,7 @@ for a in sty:
    elif '@' in vol and b[0] in vol:
     snapshot=vol.split()
     snapname=snapshot[0].split('@')[1]
-    sdict={'fullname':snapshot[0],'name':snapname, 'volume':volname, 'pool': b[0], 'host':myhost, 'creation':' '.join(snapshot[1:4]+volume[5:6]), 'time':snapshot[4], 'used':snapshot[6], 'quota':snapshot[7], 'usedbysnapshots':snapshot[8], 'refcompressratio':snapshot[9], 'prot':snapshot[10]}
+    sdict={'fullname':snapshot[0],'name':snapname, 'volume':volname, 'pool': b[0], 'host':myhost, 'creation':' '.join(snapshot[1:4]+volume[5:6]), 'time':snapshot[4], 'used':snapshot[6], 'quota':snapshot[7], 'usedbysnapshots':snapshot[8], 'refcompressratio':snapshot[9], 'prot':snapshot[10], 'snaptype':snapshot[12]}
     snaplist.append(sdict)
     lsnapshots.append(sdict['name'])
     
@@ -175,6 +181,13 @@ if len(freepool) > 0:
  lraids.append(rdict)
  for lss in freepool:
   z=lss.split()
+  devname=z[5].replace('/dev/','')
+  if devname not in drives:
+   print('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
+   print('lss',lss)
+   print(drives)
+   print('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
+   continue
   diskid=lsscsi.index(lss)
   host=z[3].split('-')[1]
   if host not in str(readyhosts):
@@ -182,8 +195,15 @@ if len(freepool) > 0:
 ##### commented for not adding free disks of freepool
   lhosts.add(host)
   size=z[7]
-  devname=z[5].replace('/dev/','')
   ddict={'name':'scsi-'+z[6],'actualdisk':'scsi-'+z[6], 'changeop':'free','status':'free','raid':'free','pool':'pree','id': str(diskid), 'host':host, 'size':size,'devname':devname}
+  if z[6] in str(zpool):
+   continue
+  if '0cca' in z[6]:
+    
+   print('#######################################################################################')
+   print(zpool)
+   print(ddict)
+   print('#######################################################################################')
   disklist.append(ddict)
   ldisks.append(ddict)
 if len(lhosts)==0:
@@ -211,6 +231,5 @@ for y in xnotfound:
 for y in xnew:
  put(y[0],y[1])
 if '1' in perfmon: 
- cmdline=['/TopStor/queuethis.sh','putzpool.py','stop','system']
- result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ queuethis('putzpool.py','stop','system')
 

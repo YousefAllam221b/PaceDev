@@ -1,20 +1,9 @@
 #!/bin/python3.6
-import subprocess
-from ast import literal_eval as mtuple
+from etcdget import etcdget as get
 import socket
-from os import listdir
-from os.path import isfile, join
 
-cmdline=['/pace/etcdget.py','known','--prefix']
-result=subprocess.run(cmdline,stdout=subprocess.PIPE)
-clients=str(result.stdout).replace('known/','')[2:][:-3].split('\\n')
-cmdline=['/pace/etcdget.py','leader','--prefix']
-result=subprocess.run(cmdline,stdout=subprocess.PIPE)
-clients+=str(result.stdout).replace('leader/','')[2:][:-3].split('\\n')
-client=[]
-for c in clients:
- try:
-  c=mtuple(c)
-  print(c[0])
- except:
-  pass
+myhost=socket.gethostname()
+clients=get('ActivePartners','--prefix')
+if myhost in str(clients):
+ for c in clients:
+  print('target/'+c[0].replace('ActivePartners/',''))

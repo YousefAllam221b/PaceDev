@@ -6,17 +6,20 @@ cd /pace
 myhost=`hostname -s`;
 change=0
 #declare -a iscsitargets=(`cat /pacedata/iscsitargets | awk '{print $2}' `);
-declare -a iscsitargets=(`ETCDCTL_API=3 ./iscsiclients.py`);
+declare -a iscsitargets=(`ETCDCTL_API=3 ./iscsiclients.py | grep target | awk -F'/' '{print $2}'`);
 currentdisks=`targetcli ls /iscsi`
 disks=(`lsblk -nS -o name,serial,vendor | grep -v sr0 | grep -vw sda | grep -v LIO | awk '{print $1}'`)
 diskids=`lsblk -nS -o name,serial,vendor | grep -v sr0 | grep -vw sda | grep -v LIO | awk '{print $1" "$2}'`
 mappedhosts=`targetcli ls /iscsi | grep Mapped`;
 targets=`targetcli ls backstores/block | grep -v deactivated |  grep dev | awk -F'[' '{print $2}' | awk '{print $1}'`
-tpgs=(`targetcli ls /iscsi | grep iqn | grep TPG | awk -F'iqn' '{print $2}' | awk '{print $1}'`)
+tpgs=(`targetcli ls /iscsi | grep iqn | grep TPG | grep ':t1' | awk -F'iqn' '{print $2}' | awk '{print $1}'`)
+myip=`/sbin/pcs resource show CC | grep Attributes | awk -F'ip=' '{print $2}' | awk '{print $1}'`
 declare -a newdisks=();
 targetcli ls iscsi/ | grep ".$myhost:t1" &>/dev/null
 if [ $? -ne 0 ]; then
  targetcli iscsi/ create iqn.2016-03.com.${myhost}:t1 &>/dev/null
+ targetcli iscsi/iqn.2016-03.com.$myhost:t1/tpg1/portals delete 0.0.0.0 3260
+ targetcli iscsi/iqn.2016-03.com.$myhost:t1/tpg1/portals create $myip 3266
  change=1
 fi
 i=0;
@@ -49,7 +52,15 @@ done;
 for target in "${iscsitargets[@]}"; do
  echo $mappedhosts | grep $target &>/dev/null
  if [ $? -ne 0 ]; then
+   myip=`/pace/etcdget.py ActivePartners/$myhost`
   targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1/acls/ create iqn.1994-05.com.redhat:$target
+  
+  #targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1 demo_mode_write_protect=0 
+  #targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1 generate_node_acls=1 
+  #targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1 set attribute authentication=1
+  #targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1 set auth userid=MoatazNegm 
+  #targetcli iscsi/iqn.2016-03.com.${myhost}:t1/tpg1 set auth password=YNPassword121 
+
   change=1
  fi
 done

@@ -2,7 +2,7 @@
 import subprocess,sys,socket
 import json
 from ast import literal_eval as mtuple
-from etcdget import etcdget as get
+from etcdgetpy import etcdget as get
 from etcdput import etcdput as put
 from etcddel import etcddel as dels 
 import logmsg

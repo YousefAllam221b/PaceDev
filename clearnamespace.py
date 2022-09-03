@@ -10,7 +10,7 @@ def clearnamespace(*args):
    nsn=next(ns)
   except: 
    return
-  cmdline='/sbin/ip addr del '+nsn[1]+'/24 dev '+arg 
+  cmdline='/sbin/ip addr del '+nsn[1]+' dev '+arg 
   subprocess.run(cmdline.split(),stdout=subprocess.PIPE)
 
 if __name__=='__main__':

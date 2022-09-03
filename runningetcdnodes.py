@@ -1,8 +1,9 @@
 #!/bin/python3.6
-import sys, subprocess
+import sys, subprocess, os
 
+os.environ['ETCDCTL_API']= '3'
 ip=sys.argv[1]
-cmdline=['etcdctl','-w','json','--endpoints='+ip+':2379','member','list']
+cmdline=['etcdctl','--user=root:YN-Password_123','-w','json','--endpoints='+ip+':2379','member','list']
 result=subprocess.run(cmdline,stdout=subprocess.PIPE)
 serverstatus=result.stdout
 serverstatus=str(serverstatus)[2:]

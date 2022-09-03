@@ -1,6 +1,7 @@
 #!/bin/python3.6
 import subprocess,sys
 import json
+from logqueue import queuethis
 from ast import literal_eval as mtuple
 from etcdget import etcdget as get
 from etcdput import etcdput as put
@@ -42,15 +43,13 @@ def changeop(*args):
 
 
 if __name__=='__main__':
- cmdline='cat /pacedata/perfmon'
- perfmon=str(subprocess.run(cmdline.split(),stdout=subprocess.PIPE).stdout)
+ with open('/pacedata/perfmon','r') as f:
+  perfmon = f.readline() 
  if '1' in perfmon:
-  cmdline=['/TopStor/queuethis.sh','changeop.py','start','system']
-  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+  queuethis('changeop.py','start','system')
  if len(sys.argv) > 2 and 'scsi' in sys.argv[2]:
    forceoffline(*sys.argv[1:])
  else: 
    changeop(*sys.argv[1:])
  if '1' in perfmon:
-  cmdline=['/TopStor/queuethis.sh','changeop.py','stop','system']
-  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+  queuethis('changeop.py','stop','system')

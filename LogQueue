@@ -1,0 +1,26 @@
+#!/bin/sh
+export ETCDCTL_API=3
+ETCDCTL_API=3
+
+
+name="LogQueue"
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+rcvar=LogQueue_enable
+command="/TopStor/Logqueueheap.sh"
+command_interpreter="/usr/local/bin/sh"
+load_rc_config $name
+: ${LogQueue_enable:=no}
+: ${LogQueue_msg="LogQueue started successfuly."}
+LogQueue_start()
+{
+	echo "$LogQueue_msg"
+	/TopStor/Logqueueheap.sh &
+}
+TopStor_stop()
+{
+	echo " it is stopped thanking Allah"
+	pkill -HUP -f Logqueueheap 
+}
+
+run_rc_command "$1"

@@ -1,5 +1,6 @@
 #!/bin/python3.6
 import subprocess,sys, logmsg
+from logqueue import queuethis
 from ast import literal_eval as mtuple
 from etcddel import etcddel as etcddel
 from broadcast import broadcast as broadcast 
@@ -8,11 +9,12 @@ from etcdget import etcdget as get
 from etcdgetlocal import etcdget as getlocal
 from etcdput import etcdput as put 
 import json
-cmdline='cat /pacedata/perfmon'
-perfmon=str(subprocess.run(cmdline.split(),stdout=subprocess.PIPE).stdout)
+
+
+with open('/pacedata/perfmon','r') as f:
+ perfmon = f.readline() 
 if '1' in perfmon:
- cmdline=['/TopStor/queuethis.sh','remknown.py','start','system']
- result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ queuethis('remknown.py','start','system')
 known=get('known','--prefix')
 nextone=get('nextlead')
 if str(nextone[0]).split('/')[0] not in  str(known):
@@ -42,6 +44,16 @@ if known != []:
    if nextone == []:
     put('nextlead',kn[0].replace('known/','')+'/'+kn[1])
     broadcast('broadcast','/TopStor/pump.sh','syncnext.sh','nextlead','nextlead')
+poss = get('pos','--prefix')
+if poss != []:
+ for pos in poss:
+  heart = getlocal(pos[1],'local','--prefix')
+  print(type(heart),heart)
+  if( '-1' in str(heart) or len(heart) < 1) or (heart[0][1] not in pos[1]):
+   print(pos[0].replace('possible',''))
+   etcddel('ready/'+pos[0].replace('possible',''))
+   etcddel(pos[0])
+  
+  
 if '1' in perfmon:
- cmdline=['/TopStor/queuethis.sh','remknown.py','stop','system']
- result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ queuethis('remknown.py','stop','system')

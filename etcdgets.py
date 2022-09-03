@@ -1,7 +1,9 @@
 #!/bin/python3.6
-import subprocess,sys
+import subprocess,sys, os
 import json
+from time import sleep
 
+os.environ['ETCDCTL_API']= '3'
 key=sys.argv[1]
 try:
  prefix=sys.argv[2]
@@ -11,8 +13,14 @@ endpoints=''
 data=json.load(open('/pacedata/runningetcdnodes.txt'));
 for x in data['members']:
  endpoints=endpoints+str(x['clientURLs'])[2:][:-2]+','
-cmdline=['etcdctl','--endpoints='+endpoints,'get',key,prefix]
-result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+endpoints = endpoints[:-1]
+cmdline=['etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,prefix]
+err = 2
+while err == 2:
+ result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ err = result.returncode
+ if err == 2:
+  sleep(2)
 ilist=[]
 try:
  if(prefix !=''):

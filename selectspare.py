@@ -1,9 +1,10 @@
 #!/bin/python3.6
 import subprocess,sys,socket
+from logqueue import queuethis
 import json
 from ast import literal_eval as mtuple
 from collections import Counter
-from etcdget import etcdget as get
+from etcdgetpy import etcdget as get
 from etcdput import etcdput as put
 from etcddel import etcddel as dels 
 from poolall import getall as getall
@@ -50,6 +51,7 @@ def mustattach(cmdline,disksallowed,defdisk,myhost):
    cmd.append(defdisk['actualdisk'])
    cmd.append(spare['actualdisk'])
    try: 
+    print('cmd',cmd)
     subprocess.check_call(cmd)
     if 'attach' in cmd:
      logmsg.sendlog('Disu6','info','system', spare['id'],defdisk['raid'],defdisk['pool'],myhost)
@@ -383,15 +385,28 @@ def spare2(*args):
  striperaids=[]
  if newop==[-1]:
   return
- degradedpools=[x for x in newop['pools'] if myhost in x['host'] and  'DEGRADED' in x['changeop']]
- #strippools=[x for x in newop['pools'] if myhost in x['host']  and 'stripe' in str(x[raidlist])]
+ availability = get('balance','--prefix')
+ degradedpools=[x for x in newop['pools'] if myhost in x['host'] and  'DEGRADED' in x['status']]
  for spool in newop['pools']:
   for sraid in spool['raidlist']:
-   if 'ree' not in sraid['name']:
-    allraids.append(sraid)
+   if len(availability) > 0:
+    if 'ree' not in sraid['name'] and spool['name'] in str(availability):
+     allraids.append(sraid)
+   else:
+    if 'ree' not in sraid['name']:
+     allraids.append(sraid)
+ print(allraids)
  striperaids=[x for x in allraids if 'stripe' in x['name']]
  onlineraids=[x for x in allraids if 'ONLINE' in x['changeop']]
  degradedraids=[x for x in allraids if 'DEGRADE' in x['status']]
+ print('degraded',degradedraids)
+ for raid in degradedraids:
+  for disk in raid['disklist']:
+   if 'ONLINE' not in disk['changeop']:
+     cmdline2=['/sbin/zpool', 'detach', disk['pool'],disk['actualdisk']]
+     subprocess.run(cmdline2,stdout=subprocess.PIPE)
+     dels('disk',disk['actualdisk'])
+     
  freedisks=[ x for x in newop['disks']  if 'free' in x['raid']]  
  disksfree=[x for x in freedisks if x['actualdisk'] not in str(usedfree)]
  if len(disksfree) > 0 and len(degradedraids) > 0 : 
@@ -405,12 +420,10 @@ def spare2(*args):
  
  
 if __name__=='__main__':
- cmdline='cat /pacedata/perfmon'
- perfmon=str(subprocess.run(cmdline.split(),stdout=subprocess.PIPE).stdout)
+ with open('/pacedata/perfmon','r') as f:
+  perfmon = f.readline() 
  if '1' in perfmon:
-  cmdline=['/TopStor/queuethis.sh','selectspare.py','start','system']
-  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+  queuethis('selectspare.py','start','system')
  spare2(*sys.argv[1:])
  if '1' in perfmon:
-  cmdline=['/TopStor/queuethis.sh','selectspare.py','stop','system']
-  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+  queuethis('selectspare.py','stop','system')

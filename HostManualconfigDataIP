@@ -26,3 +26,4 @@ else
 #/sbin/reboot
 fi
 ETCDCTL_API=3 /pace/etcdput.py dataip $hostip/$subnet/$dev
+ETCDCTL_API=3 /pace/broadcasttolocal.py dataip $hostip/$subnet/$dev

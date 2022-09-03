@@ -6,8 +6,12 @@ echo $$ > /var/run/zfsping.pid
 targetcli clearconfig True
 targetcli saveconfig
 targetcli restoreconfig /pacedata/targetconfig
+targetcli iscsi/ delete iqn.2016-03.com.${myhost}:data
 targetcli saveconfig
+touch /pacedata/perfmon
+#/TopStor/logqueueheap.py &
 failddisks=''
+oldlsscsi='00'
 isknown=0
 leaderfail=0
 ActivePartners=1
@@ -21,17 +25,10 @@ oldclocker=0
 clockdiff=0
 date=`date`
 enpdev='enp0s8'
-echo $date >> /root/zfspingstart
 systemctl restart target
 cd /pace
 rm -rf /pacedata/addiscsitargets 2>/dev/null
 rm -rf /pacedata/startzfsping 2>/dev/null
-while [ ! -f /pacedata/startzfsping ];
-do
- sleep 1;
- echo cannot run now > /root/zfspingtmp
-done
-echo startzfs run >> /root/zfspingtmp
 /pace/startzfs.sh
 leadername=` ./etcdget.py leader --prefix | awk -F'/' '{print $2}' | awk -F"'" '{print $1}'`
 leaderip=` ./etcdget.py leader/$leadername `
@@ -51,15 +48,16 @@ do
  runningcluster=0
  touch /var/www/html/des20/Data/TopStorqueue.log
  chown apache /var/www/html/des20/Data/TopStorqueue.log
- if [ $perfmon -eq 1 ]; then
- /TopStor/queuethis.sh AmIprimary start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+ /TopStor/logqueue.py AmIprimary start system 
  fi
   
  echo check if I primary etcd >> /root/zfspingtmp
  netstat -ant | grep 2379 | grep LISTEN &>/dev/null
  if [ $? -eq 0 ]; 
  then
-  echo I am primary etcd,isprimary:$isprimary >> /root/zfspingtmp
+  echo I am primary etcd,isprimary:$isprimary, primtostd:$primtostd >> /root/zfspingtmp
   if [[ $isprimary -le 10 ]];
   then
    isprimary=$((isprimary+1))
@@ -86,6 +84,12 @@ do
    then
     /pace/putzpool.py 1 $isprimary $primtostd  &
    fi
+   pgrep activeusers 
+   if [ $? -ne 0 ];
+   then
+    /pace/activeusers.py   &
+   fi
+
    ./etcddel.py toimport/$myhost
    toimport=2
   fi
@@ -94,27 +98,31 @@ do
   leaderall=` ./etcdget.py leader --prefix 2>/dev/null`
   if [[ -z $leaderall ]]; 
   then
- if [ $perfmon -eq 1 ]; then
-   /TopStor/queuethis.sh FixIamleader start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+   /TopStor/logqueue.py FixIamleader start system 
  fi
    echo no leader although I am primary node >> /root/zfspingtmp
    ./runningetcdnodes.py $myip 2>/dev/null
    ./etcddel.py leader --prefix 2>/dev/null &
    ./etcdput.py leader/$myhost $myip 2>/dev/null &
- if [ $perfmon -eq 1 ]; then
-   /TopStor/queuethis.sh FixIamleader stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+   /TopStor/logqueue.py FixIamleader stop system 
  fi
   fi
   echo adding known from list of possbiles >> /root/zfspingtmp
    pgrep  addknown 
    if [ $? -ne 0 ];
    then
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh addingknown start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+    /TopStor/logqueue.py addingknown start system 
  fi
     ./addknown.py 2>/dev/null & 
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh addingknown stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+    /TopStor/logqueue.py addingknown stop system 
  fi 
    fi
  echo checking if there are partners to sync >> /root/zfspingtmp
@@ -123,18 +131,24 @@ do
  then
   ETCDCTL_API=3 /pace/etcddel.py tosync --prefix
   echo syncthing with the ready to sync partners >> /root/zfspingtmp
-  ./syncthis.py ready --prefix &
-  ./syncthis.py pools/ --prefix &
-  ./syncthis.py volumes/ --prefix &
-  ./syncthis.py ActivePartners --prefix &
+  ./syncthis.py ready --prefix 
+  ./syncthis.py pools/ --prefix 
+  ./syncthis.py volumes/ --prefix 
+  ./syncthis.py ActivePartners --prefix 
+  ./syncthis.py allowedPartners --prefix 
+  ./syncthis.py frstnode --prefix 
+  ./syncthis.py namespace --prefix 
  else
   readycount=`ETCDCTL_API=3 /pace/etcdget.py ready --prefix | wc -l` 
+  lostcount=`ETCDCTL_API=3 /pace/etcdget.py lost --prefix | wc -l` 
+  totalin=$((readycount+lostcount))
   ActivePartners=`ETCDCTL_API=3 /pace/etcdget.py ActivePartners --prefix | wc -l` 
-  if [ $readycount -eq $ActivePartners ];
+  if [ $totalin -eq $ActivePartners ];
   then  
    echo All running partners are ready and in sync >> /root/zfspingtmp
   else
    echo some partners are not in sync >> /root/zfspingtmp
+   ./etcdput.py tosync yes
   fi
  fi
  else
@@ -156,8 +170,9 @@ do
    echo $nextleadip | grep $myip
    if [ $? -eq 0 ];
    then
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh AddingMePrimary start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+    /TopStor/logqueue.py AddingMePrimary start system 
  fi
     echo hostlostlocal getting all my pools from $leadername >> /root/zfspingtmp
     ETCDCTL_API=3 /pace/hostlostlocal.sh $leadername $myip $leaderip
@@ -168,6 +183,7 @@ do
     chmod +r /etc/etcd/etcd.conf.yml
     systemctl daemon-reload 2>/dev/null
     systemctl start etcd 2>/dev/null
+    ionice -c2 -n0 -p `pgrep etcd`
     while true;
     do
      echo starting etcd=$?
@@ -208,7 +224,14 @@ do
     if [ $? -ne 0 ];
     then
      /pace/putzpool.py 2 $isprimary $primtostd  &
+     /TopStor/HostgetIPs
     fi
+    pgrep activeusers 
+    if [ $? -ne 0 ];
+    then
+     /pace/activeusers.py   &
+    fi
+
 #    systemctl status nfs 
 #    if [ $? -ne 0 ];
 #    then
@@ -218,8 +241,9 @@ do
     chmod g+r /var/www/html/des20/Data/* 2>/dev/null
     runningcluster=1
     leadername=$myhost
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh AddinMePrimary stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+    /TopStor/logqueue.py AddinMePrimary stop system 
  fi
    else
     ETCDCTL_API=3 /pace/hostlostlocal.sh $leadername $myip $leaderip
@@ -236,8 +260,9 @@ do
       sleep 1 
       result=`ETCDCTL_API=3 ./nodesearch.py $myip 2>/dev/null`
      else
- if [ $perfmon -eq 1 ]; then
-      /TopStor/queuethis.sh AddingtoOtherleader start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+      /TopStor/logqueue.py AddingtoOtherleader start system 
  fi
       echo found the new leader run $result >> /root/zfspingtmp
       waiting=0
@@ -253,8 +278,9 @@ do
       cp /TopStor/chrony.conf /etc/
       sed -i "s/MASTERSERVER/$leaderip/g" /etc/chrony.conf
       systemctl restart chronyd
- if [ $perfmon -eq 1 ]; then
-      /TopStor/queuethis.sh AddingtoOtherleader start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+      /TopStor/logqueue.py AddingtoOtherleader start system 
  fi
      fi
     done 
@@ -274,16 +300,26 @@ do
    fi
    echo checking if I am known host >> /root/zfspingtmp
    known=` ./etcdget.py known --prefix 2>/dev/null`
+   myconfig=` ./etcdgetlocal.py $myip configured/$myhost 2>/dev/null`
+
    echo $known | grep $myhost  &>/dev/null
    if [ $? -ne 0 ];
    then
-    echo I am not a known adding me as possible >> /root/zfspingtmp
-    ./etcdput.py possible$myhost $myip 2>/dev/null &
+    echo $myconfig | grep yes  &>/dev/null
+    if [ $? -ne 0 ];
+    then
+     echo I am not a known and I am not configured. So, adding me as possible >> /root/zfspingtmp
+     ./etcdput.py possible$myhost $myip 2>/dev/null &
+    else
+     echo I am not a known but I am configured so need to activate >> /root/zfspingtmp
+     ./etcdput.py toactivate$myhost $myip 2>/dev/null &
+    fi 
    else
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh iamkknown start system &
- fi
-    echo I am known so running all needed etcd task:boradcast,isknown:$isknown >> /root/zfspingtmp
+   echo $perfmon | grep 1
+   if [ $? -eq 0 ]; then
+     /TopStor/logqueue.py iamkknown start system 
+   fi
+   echo I am known so running all needed etcd task:boradcast,isknown:$isknown >> /root/zfspingtmp
     if [[ $isknown -eq 0 ]];
     then
      echo running sendhost.py $leaderip 'user' 'recvreq' $myhost >>/root/tmp2
@@ -294,6 +330,7 @@ do
      /pace/etcdsync.py $myip pools pools 2>/dev/null
      /pace/etcdsync.py $myip poolsnxt poolsnxt 2>/dev/null
      /pace/etcdsync.py $myip nextlead nextlead 2>/dev/null
+     /pace/etcdsync.py $myip namespace namespace 
      #/pace/sendhost.py $leaderip 'cifs' 'recvreq' $myhost &
      /pace/sendhost.py $leaderip 'logall' 'recvreq' $myhost &
      isknown=$((isknown+1))
@@ -315,25 +352,35 @@ do
      toimport=1
     fi
     echo finish running tasks task:boradcast, log..etc >> /root/zfspingtmp
- if [ $perfmon -eq 1 ]; then
-    /TopStor/queuethis.sh iamkknown stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+    /TopStor/logqueue.py iamkknown stop system 
  fi
    fi
   fi 
  fi
- if [ $perfmon -eq 1 ]; then
- /TopStor/queuethis.sh AmIprimary stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+ /TopStor/logqueue.py AmIprimary stop system 
  fi
  pgrep putzpool 
  if [ $? -ne 0 ];
  then
   /pace/putzpool.py 3 $isprimary $primtostd  &
  fi
+ pgrep activeusers 
+ if [ $? -ne 0 ];
+ then
+  /pace/activeusers.py   &
+ fi
+
+
  echo checking if I need to run local etcd >> /root/zfspingtmp
  if [[ $needlocal -eq 1 ]];
  then
- if [ $perfmon -eq 1 ]; then
-  /TopStor/queuethis.sh IamLocal start system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+  /TopStor/logqueue.py IamLocal start system 
  fi
   echo start the local etcd >> /root/zfspingtmp
   ./etccluster.py 'local' $myip 2>/dev/null
@@ -341,6 +388,7 @@ do
   systemctl daemon-reload
   systemctl stop etcd 2>/dev/null
   systemctl start etcd 2>/dev/null
+  ionice -c2 -n0 -p `pgrep etcd`
   while true;
   do
    echo starting etcd=$?
@@ -362,21 +410,36 @@ do
   ./etcdsync.py $myip known known 2>/dev/null &
   ./etcdsync.py $myip localrun localrun 2>/dev/null &
   ./etcdsync.py $myip leader known 2>/dev/null &
+  echo /TopStor/syncq.py $leaderip $myhost >>/root/tmp2
+  /TopStor/syncq.py $leaderip $myhost 2>/root/syncqerror
 #   ./etcddellocal.py $myip known/$myhost --prefix 2>/dev/null
   echo done and exit >> /root/zfspingtmp
   continue 
- if [ $perfmon -eq 1 ]; then
-  /TopStor/queuethis.sh IamLocal stop system &
+ echo $perfmon | grep 1
+ if [ $? -eq 0 ]; then
+  /TopStor/logqueue.py IamLocal stop system 
  fi
  fi
  if [[ $needlocal -eq  2 ]];
  then
   echo I am already local etcd running iscsirefresh on $myip $myhost  >> /root/zfspingtmp
+  pgrep fapi 
+  if [ $? -ne 0 ];
+  then
+   cd /TopStor
+   ./fapi.py 1>/root/fapi.log 2>/root/fapierr.log &
+  fi
   pgrep iscsiwatchdog
   if [ $? -ne 0 ];
   then
    /pace/iscsiwatchdog.sh $myip $myhost $leader 2>/dev/null &
   fi
+  pgrep checksyncs 
+  if [ $? -ne 0 ];
+  then
+   /pace/checksyncs.py
+  fi
+
  fi
  echo checking if still in the start initcron is still running  >> /root/zfspingtmp
  if [ -f /pacedata/forzfsping ];
@@ -384,7 +447,8 @@ do
   echo Yes. so I have to exit >> /root/zfspingtmp
   continue
  fi
- echo No. so checking  I am primary >> /root/zfspingtmp
+ cd /pace
+ echo Checking  I am primary >> /root/zfspingtmp
  if [[ $runningcluster -eq 1 ]];
  then
   echo Yes I am primary so will check for known hosts >> /root/zfspingtmp
@@ -397,6 +461,11 @@ do
    if [ $? -ne 0 ];
    then
     ./addknown.py $myhost 2>/dev/null & 
+   fi
+   pgrep addactive 
+   if [ $? -ne 0 ];
+   then
+    ./addactive.py $myhost 2>/dev/null & 
    fi
    pgrep  selectimport 
    if [ $? -ne 0 ];
@@ -446,10 +515,17 @@ do
    oldclocker=$clocker
   else
    echo checking zpool to import>> /root/zfspingtmp
-   pgrep  zpooltoimport 
+   lsscsi=`lsscsi | wc -c`'lsscsi'
+   pgrep zpooltoimport
    if [ $? -ne 0 ];
    then
     /TopStor/zpooltoimport.py all &
+    oldlsscsi=$lsscsi
+   fi
+   pgrep  VolumeCheck 
+   if [ $? -ne 0 ];
+   then
+    /TopStor/VolumeCheck.py
    fi
   fi
  fi
@@ -467,11 +543,23 @@ do
   oldclocker=$clocker
   clockdiff=0
  fi
+ pgrep fapi 
+ if [ $? -ne 0 ];
+ then
+  cd /TopStor
+  ./fapi.py 1>/root/fapi.log 2>/root/fapierr.log &
+ fi
  pgrep iscsiwatchdog
  if [ $? -ne 0 ];
  then
   /pace/iscsiwatchdog.sh 2>/dev/null  &
  fi
+ pgrep checksyncs 
+ if [ $? -ne 0 ];
+ then
+  /pace/checksyncs.py
+ fi
+
   echo Collecting a change in system occured >> /root/zfspingtmp
  #/pace/changeop.py hosts/$myhost/current d
    pgrep  changeop 
@@ -479,9 +567,11 @@ do
    then
     ETCDCTL_API=3 /pace/changeop.py $myhost &
    fi
+
    pgrep  selectspare 
    if [ $? -ne 0 ];
    then
     ETCDCTL_API=3 /pace/selectspare.py $myhost &
    fi
+    /TopStor/electspare.py 
 done

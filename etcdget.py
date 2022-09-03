@@ -1,13 +1,22 @@
 #!/bin/python3.6
-import subprocess,sys
+import subprocess,sys, os
 import json
+from time import sleep
+
 def etcdget(key, prefix=''):
+ os.environ['ETCDCTL_API']= '3'
  endpoints=''
  data=json.load(open('/pacedata/runningetcdnodes.txt'));
  for x in data['members']:
   endpoints=endpoints+str(x['clientURLs'])[2:][:-2]+','
- cmdline=['/bin/etcdctl','--endpoints='+endpoints,'get',key,prefix]
- result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+ endpoints = endpoints[:-1]
+ cmdline=['/bin/etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,prefix]
+ err = 2
+ while err == 2:
+  result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+  err = result.returncode
+  if err == 2:
+    sleep(2)
  z=[]
  try:
   if(prefix =='--prefix'):
@@ -17,11 +26,19 @@ def etcdget(key, prefix=''):
     z.append(x) 
     print(x)
   elif(prefix == ''):
-   z.append((str(result.stdout).split(key)[1][2:][:-3]))
-   print(str(result.stdout).split(key)[1][2:][:-3])
+   if len(str(result.stdout).split(key)) > 2 :	
+    z.append(key.join(str(result.stdout).split(key)[1:])[2:][:-3])
+   else:
+    z.append((str(result.stdout).split(key)[1][2:][:-3]))
+   print(z[0])
   else:
-   cmdline=['/bin/etcdctl','--endpoints='+endpoints,'get',key,'--prefix']
-   result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+   cmdline=['/bin/etcdctl','--user=root:YN-Password_123','--endpoints='+endpoints,'get',key,'--prefix']
+   err = 2
+   while err == 2:
+    result=subprocess.run(cmdline,stdout=subprocess.PIPE)
+    err = result.returncode
+    if err == 2:
+     sleep(2)
    mylist=str(result.stdout)[2:][:-3].split('\\n')
    zipped=zip(mylist[0::2],mylist[1::2])
    for x in zipped:
